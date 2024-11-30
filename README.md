@@ -46,8 +46,8 @@ This application is a **multilingual conversational assistant** built with **Nux
 
 ### **Clone the Repository**
 ```bash
-git clone https://github.com/your-username/multilingual-assistant.git
-cd multilingual-assistant
+git clone https://github.com/mastashake08/shake-lingo.git
+cd shake-lingo
 ```
 
 ### **Install Dependencies**
