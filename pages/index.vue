@@ -17,6 +17,17 @@
           </select>
         </div>
   
+        <!-- Auto Speech Toggle -->
+        <div class="mb-4 flex items-center">
+          <label for="autoSpeech" class="text-sm font-medium text-gray-700">Auto Speak Responses</label>
+          <input
+            id="autoSpeech"
+            type="checkbox"
+            v-model="autoSpeech"
+            class="ml-2 h-4 w-4 text-indigo-600 border-gray-300 rounded"
+          />
+        </div>
+  
         <!-- Speak Button -->
         <div class="mb-4">
           <button
@@ -31,50 +42,50 @@
         <div v-if="conversationHistory.length > 0" class="mb-4">
           <h2 class="text-lg font-semibold mb-2">Conversation History</h2>
           <ul class="space-y-4">
-            <li v-for="(message, index) in conversationHistory" :key="index" class="border-b pb-2">
+            <li
+              v-for="(message, index) in conversationHistory"
+              :key="index"
+              class="border-b pb-2"
+            >
               <p class="text-gray-700"><strong>You:</strong> {{ message.user }}</p>
-              <p class="text-gray-700"><strong>Assistant:</strong> {{ message.assistant }}</p>
+              <p class="text-gray-700">
+                <strong>Assistant (Original):</strong> {{ message.assistant.original }}
+              </p>
+              <p class="text-gray-700">
+                <strong>Assistant (Translated):</strong> {{ message.assistant.translated }}
+              </p>
             </li>
           </ul>
         </div>
   
-        <!-- Show Recognized Text -->
-        <div v-if="spokenText" class="mb-4">
+        <!-- Real-Time Streaming Response -->
+        <div v-if="isStreaming" class="mb-4">
+          <h2 class="text-lg font-semibold mb-2">Streaming Response</h2>
           <p class="text-gray-800">
-            <strong>You said:</strong> "{{ spokenText }}"
+            {{ streamingResponse }}
           </p>
-        </div>
-  
-        <!-- Display AI Response -->
-        <div v-if="translatedResponse" class="mb-4">
-          <p class="text-gray-800">
-            <strong>Assistant:</strong> "{{ translatedResponse }}"
-          </p>
-          <button
-            @click="speak(translatedResponse)"
-            class="w-full bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
-          >
-            Speak Response
-          </button>
         </div>
       </div>
     </div>
   </template>
   
   <script>
-  import { ref, onMounted } from 'vue';
+  import { ref, onMounted, computed } from "vue";
   
   export default {
     setup() {
-      const languages = ref([]); // Dynamically populated languages
-      const selectedLanguage = ref('en-US'); // Default language code
-      const spokenText = ref(''); // User's spoken input
-      const aiResponse = ref(''); // AI's raw response
-      const translatedResponse = ref(''); // Translated response
-      const conversationHistory = ref([]); // Conversation history
+      const languages = ref([]);
+      const selectedLanguage = ref("en-US");
+      const spokenText = ref("");
+      const streamingResponse = ref("");
+      const translatedResponse = ref("");
+      const conversationHistory = ref([]);
+      const autoSpeech = ref(false);
+  
+      const isStreaming = ref(false);
+  
       let session;
   
-      // Fetch available languages dynamically
       const getAvailableLanguages = () => {
         const voices = speechSynthesis.getVoices();
         return voices.map((voice) => ({
@@ -83,72 +94,141 @@
         }));
       };
   
-      // Initialize the Prompt API session and fetch languages
-      onMounted(async () => {
-        session = await ai.languageModel.create({
-          systemPrompt: "You are a friendly multilingual assistant. Respond concisely in a conversational tone.",
+      const initializeSession = async () => {
+        try {
+  session = await self.ai.languageModel.create({
+    systemPrompt: "You are a multilingual assistant.",
+    
         });
-  
-        // Populate available languages
-        languages.value = getAvailableLanguages();
-        if (!languages.value.length) {
-          // Sometimes voices are not immediately available; retry after a delay
-          speechSynthesis.onvoiceschanged = () => {
-            languages.value = getAvailableLanguages();
-          };
+        } catch (error) {
+        console.error("Error creating language model session:", error);
+
+        if (error.name === "AbortError") {
+            alert("Model download was aborted.");
+        } else if (error.name === "NetworkError") {
+            alert("Failed to download model due to a network issue.");
+        } else {
+            alert("Failed to download the model. Please try again later.");
         }
+        } 
+      };
   
-        // Load saved conversation history
-        const savedHistory = JSON.parse(localStorage.getItem('conversationHistory') || '[]');
-        conversationHistory.value = savedHistory;
-      });
+      const downloadChatHistory = () => {
+        const dataStr =
+          "data:text/json;charset=utf-8," +
+          encodeURIComponent(JSON.stringify(conversationHistory.value, null, 2));
+        const downloadAnchor = document.createElement("a");
+        downloadAnchor.setAttribute("href", dataStr);
+        downloadAnchor.setAttribute("download", "chat_history.json");
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloadAnchor.remove();
+      };
   
-      // Start Speech Recognition
+      const uploadChatHistory = (event) => {
+        const file = event.target.files[0];
+        const reader = new FileReader();
+        reader.onload = () => {
+          conversationHistory.value = JSON.parse(reader.result);
+          localStorage.setItem(
+            "conversationHistory",
+            JSON.stringify(conversationHistory.value)
+          );
+        };
+        reader.readAsText(file);
+      };
+  
+      onMounted(async () => {
+  try {
+    // Check if the Prompt API capabilities are available
+    const capabilities = await self.ai.languageModel.capabilities();
+
+    if (capabilities.available === "no") {
+      throw new Error("The Prompt API is unavailable on this device.");
+    }
+
+    if (capabilities.available === "after-download") {
+      console.log("Model needs to be downloaded. Starting download...");
+    }
+
+    // Initialize the Prompt API session
+    session = await self.ai.languageModel.create({
+      systemPrompt: "You are a multilingual assistant.",
+      monitor(monitor) {
+        monitor.addEventListener("downloadprogress", (e) => {
+          progressBytes.value = { loaded: e.loaded, total: e.total };
+        });
+      },
+    });
+
+    console.log("Language model session successfully created!");
+  } catch (error) {
+    console.error("Error during initialization:", error);
+
+    if (error.name === "AbortError") {
+      alert("Model download was aborted.");
+    } else if (error.name === "NetworkError") {
+      alert("Network error occurred while downloading the model.");
+    } else {
+      alert("An error occurred while initializing the model. Please try again.");
+    }
+  }
+});
+
+  
       const startRecognition = () => {
         startSpeechRecognition(async (result) => {
           spokenText.value = result;
-          const response = await getAIResponse(result);
-          aiResponse.value = response;
-          await translateResponse(response);
-          saveConversation(result, translatedResponse.value); // Save interaction
+          await getAIResponseStreaming(result);
         });
       };
   
-      // Fetch AI Response
-      const getAIResponse = async (userInput) => {
+      const getAIResponseStreaming = async (userInput) => {
         try {
-          return await session.prompt(userInput);
+          isStreaming.value = true;
+          streamingResponse.value = "";
+  
+          const stream = await session.promptStreaming(userInput);
+          for await (const chunk of stream) {
+            streamingResponse.value += chunk;
+          }
+  
+          isStreaming.value = false;
+          await translateResponse(streamingResponse.value);
+          saveConversation(userInput, {
+            original: streamingResponse.value,
+            translated: translatedResponse.value,
+          });
+  
+          if (autoSpeech.value) speak(translatedResponse.value);
         } catch (error) {
-          console.error('Error fetching AI response:', error);
-          return "I'm sorry, something went wrong.";
+          console.error("Error fetching streaming response:", error);
+          isStreaming.value = false;
         }
       };
   
-      // Translate AI Response
       const translateResponse = async (text) => {
         try {
           const translator = await self.translation.createTranslator({
-            sourceLanguage: 'en',
-            targetLanguage: selectedLanguage.value.split('-')[0], // Use language code only
+            sourceLanguage: "en",
+            targetLanguage: selectedLanguage.value.split("-")[0],
           });
-  
           translatedResponse.value = await translator.translate(text);
         } catch (error) {
-          console.error('Error translating AI response:', error);
+          console.error("Error translating AI response:", error);
           translatedResponse.value = text;
         }
       };
   
-      // Save conversation to history
       const saveConversation = (user, assistant) => {
         const newMessage = { user, assistant };
         conversationHistory.value.push(newMessage);
-  
-        // Save to LocalStorage
-        localStorage.setItem('conversationHistory', JSON.stringify(conversationHistory.value));
+        localStorage.setItem(
+          "conversationHistory",
+          JSON.stringify(conversationHistory.value)
+        );
       };
   
-      // Speak the translated response
       const speak = (text) => {
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = selectedLanguage.value;
@@ -159,19 +239,22 @@
         languages,
         selectedLanguage,
         spokenText,
-        aiResponse,
+        streamingResponse,
         translatedResponse,
         conversationHistory,
+        autoSpeech,
+        isStreaming,
         startRecognition,
         speak,
+        downloadChatHistory,
+        uploadChatHistory,
       };
     },
   };
   
-  // Speech Recognition Function
   function startSpeechRecognition(onResult) {
     const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-    recognition.lang = 'en-US'; // Default language for recognition
+    recognition.lang = "en-US";
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
   
@@ -181,8 +264,8 @@
     };
   
     recognition.onerror = (event) => {
-      console.error('Speech recognition error:', event.error);
-      alert('Speech recognition failed. Please try again.');
+      console.error("Speech recognition error:", event.error);
+      alert("Speech recognition failed. Please try again.");
     };
   
     recognition.start();
