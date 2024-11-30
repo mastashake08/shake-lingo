@@ -95,8 +95,14 @@ export default {
         const capabilities = await self.ai.languageModel.capabilities();
         console.log(capabilities)
         session = await self.ai.languageModel.create({
-          systemPrompt: "You are a multilingual assistant.",
+          systemPrompt: "You are a multilingual assistant. You will teach students their desired language by conversing with them.",
+          monitor(m) {
+            m.addEventListener("downloadprogress", (e) => {
+              console.log(`Downloaded ${e.loaded} of ${e.total} bytes.`);
+            });
+          },
         });
+        console.log(session)
       } catch (error) {
         console.error("Failed to create language model session:", error);
         alert("The language model API is unavailable. Please try again later.");
@@ -132,6 +138,7 @@ export default {
 
     const getAIResponseStreaming = async (userInput) => {
       try {
+      console.log(session)
         isStreaming.value = true;
         streamingResponse.value = "";
 
