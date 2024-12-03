@@ -57,6 +57,7 @@
             sourceLanguage: navigator.language.split("-")[0],
             targetLanguage: targetLanguage.value.split("-")[0],
           });
+          translatedDocument.value = "Translating....";
           translatedDocument.value = await translator.translate(documentContent.value);
           console.log(translatedDocument)
         } catch (error) {

@@ -44,6 +44,7 @@
             sourceLanguage: navigator.language.split("-")[0],
             targetLanguage: targetLanguage.value.split("-")[0],
           });
+          translatedText.value = "Translating....";
           translatedText.value = await translator.translate(inputText.value);
         } catch (error) {
           console.error("Translation failed:", error);
