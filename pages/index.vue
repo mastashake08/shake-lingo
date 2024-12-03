@@ -38,6 +38,20 @@
         </button>
       </div>
 
+      <!-- Save/Upload History -->
+      <div class="mb-6 flex justify-between">
+        <button
+          @click="downloadHistory"
+          class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg transition"
+        >
+          Save History
+        </button>
+        <label class="bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-lg transition cursor-pointer">
+          Upload History
+          <input type="file" class="hidden" @change="uploadHistory" />
+        </label>
+      </div>
+
       <!-- Conversation History -->
       <div v-if="conversationHistory.length > 0" class="mb-6">
         <h2 class="text-lg font-medium tracking-wide mb-4 text-gray-100">Conversation History</h2>
@@ -67,10 +81,9 @@
 
 <script>
 import { ref, onMounted, computed } from "vue";
-
 export default {
   setup() {
-    const languages = ref([]);
+    const { languages } = useLanguages();
     const selectedLanguage = ref("en-US");
     const spokenText = ref("");
     const streamingResponse = ref("");
@@ -81,14 +94,6 @@ export default {
     const isStreaming = ref(false);
 
     let session;
-
-    const getAvailableLanguages = () => {
-      const voices = speechSynthesis.getVoices();
-      return voices.map((voice) => ({
-        code: voice.lang,
-        name: `${voice.name} (${voice.lang})`,
-      }));
-    };
 
     const initializeSession = async () => {
       try {
@@ -111,13 +116,7 @@ export default {
 
     onMounted(async () => {
       try {
-        languages.value = getAvailableLanguages();
-        if (!languages.value.length) {
-          speechSynthesis.onvoiceschanged = () => {
-            languages.value = getAvailableLanguages();
-          };
-        }
-
+        
         await initializeSession();
 
         const savedHistory = JSON.parse(
@@ -144,7 +143,7 @@ export default {
 
         const stream = await session.promptStreaming(userInput);
         for await (const chunk of stream) {
-          streamingResponse.value += chunk;
+          streamingResponse.value = chunk;
         }
 
         isStreaming.value = false;
@@ -189,22 +188,30 @@ export default {
       speechSynthesis.speak(utterance);
     };
 
-    return {
-      languages,
-      selectedLanguage,
-      spokenText,
-      streamingResponse,
-      translatedResponse,
-      conversationHistory,
-      autoSpeech,
-      isStreaming,
-      startRecognition,
-      speak,
+    const downloadHistory = () => {
+      const dataStr =
+        "data:text/json;charset=utf-8," +
+        encodeURIComponent(JSON.stringify(conversationHistory.value, null, 2));
+      const downloadAnchor = document.createElement("a");
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", "conversation_history.json");
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
     };
-  },
-};
 
-function startSpeechRecognition(onResult) {
+    // Upload conversation history from file
+    const uploadHistory = (event) => {
+      const file = event.target.files[0];
+      const reader = new FileReader();
+      reader.onload = () => {
+        const parsedHistory = JSON.parse(reader.result);
+        conversationHistory.value = parsedHistory;
+        localStorage.setItem("conversationHistory", JSON.stringify(parsedHistory));
+      };
+      reader.readAsText(file);
+    };
+    function startSpeechRecognition(onResult) {
   const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
   recognition.lang = navigator.language;
   recognition.interimResults = false;
@@ -222,8 +229,28 @@ function startSpeechRecognition(onResult) {
 
   recognition.start();
 }
+    return {
+      languages,
+      selectedLanguage,
+      spokenText,
+      streamingResponse,
+      translatedResponse,
+      conversationHistory,
+      autoSpeech,
+      isStreaming,
+      startRecognition,
+      speak,
+      downloadHistory,
+      uploadHistory,
+    };
+  },
+};
+
+
 </script>
 
 <style>
 /* Tailwind CSS is used for all styling */
 </style>
+
+
